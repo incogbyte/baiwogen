@@ -1,4 +1,4 @@
-# Baiwogen - AI-Powered Wordlist Generator
+# Burp Ai Wordlist Generator ( Baiwogen )  -  Context AI-Powered Wordlist Generator
 
 Baiwogen is a Burp Suite extension that leverages AI to generate targeted wordlists for security testing. It traverses your target’s sitemap, filters relevant endpoints, and produces variations of paths, file names, and parameters.
 
@@ -74,3 +74,4 @@ TODO
   - Improve Wordlists prompt
   - Fixing the menu to save files
 
+Powered By @BurpAI
