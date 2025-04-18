@@ -63,6 +63,12 @@ Edit `AIConversationManager`’s system prompt to tune AI behavior:
 - Modify variation rules
 - Change language detection
 
+## Video
+
+<a href="https://www.youtube.com/watch?v=2wpT0jEZ2GY)">
+  <img src="https://img.youtube.com/vi/2wpT0jEZ2GY/maxresdefault.jpg" alt="Video Title" width="600" height="340">
+</a>
+
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
