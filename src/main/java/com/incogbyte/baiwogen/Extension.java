@@ -219,17 +219,20 @@ public class Extension implements BurpExtension, ContextMenuItemsProvider {
 
     private void populateCategories(String aiOutput) {
     
-    String json = aiOutput.trim();
-    int start = json.indexOf('{');
-    int end   = json.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-        json = json.substring(start, end + 1);
+    // Remove ```json and ``` from the output sometimes A.I returns it
+    String json = aiOutput.trim() .replaceAll("(?s)```json.*?```", "").replaceAll("(?s)```.*?```", "");
+    int start = s.indexOf('{');
+    int end   = s.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+        logging.logToError("No JSON object found in AI output");
+        wordlistPanel.updateStatus("Error parsing AI output");
+        return;
     }
+    String json = s.substring(start, end + 1);
 
     
     if ((json.startsWith("\"") && json.endsWith("\"")) ||
         (json.startsWith("'") && json.endsWith("'"))) {
-        
         json = json.substring(1, json.length() - 1)
                    .replace("\\\"", "\"")
                    .replace("\\n", "\n")
@@ -242,7 +245,7 @@ public class Extension implements BurpExtension, ContextMenuItemsProvider {
 
         List<String> files = splitCommaList(map.getOrDefault("fileVariations", List.of()));
         List<String> paths = splitCommaList(map.getOrDefault("pathVariations", List.of()));
-        List<String> params = splitCommaList(map.getOrDefault("paramVariations", List.of()));
+        List<String> params= splitCommaList(map.getOrDefault("paramVariations",List.of()));
 
         wordlistPanel.setCategoryItems("Files", files);
         wordlistPanel.setCategoryItems("Paths", paths);
