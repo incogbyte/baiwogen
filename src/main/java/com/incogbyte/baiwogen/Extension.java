@@ -32,8 +32,6 @@ import java.util.Set;
 import java.lang.reflect.Type;
 import com.google.gson.JsonSyntaxException; 
 
-
-
 public class Extension implements BurpExtension, ContextMenuItemsProvider {
     private static final Gson GSON = new Gson();
 
@@ -59,7 +57,6 @@ public class Extension implements BurpExtension, ContextMenuItemsProvider {
         wordlistPanel = new WordlistPanel();
         api.userInterface().registerSuiteTab("Baiwogen", wordlistPanel);
 
-        // Wire panel controls
         wordlistPanel.addResetContextListener(e -> {
             conversationManager.resetContext();
             wordlistPanel.resetAll();
@@ -96,141 +93,151 @@ public class Extension implements BurpExtension, ContextMenuItemsProvider {
     }
 
     private void generateWordlist(ContextMenuEvent event) {
-        new Thread(() -> {
-            try {
-                // Determine prefix from first selection
-                List<HttpRequestResponse> sel = event.selectedRequestResponses();
-                if (sel.isEmpty()) {
-                    logging.logToOutput("Select a node in the sitemap first.");
-                    return;
-                }
-                String first = sel.get(0).request().url();
-                String prefix = first.substring(0, first.lastIndexOf('/') + 1);
-
-                // Filter entire sitemap by prefix
-                List<HttpRequestResponse> items = api.siteMap()
-                    .requestResponses()
-                    .stream()
-                    .filter(rr -> rr.request().url().startsWith(prefix))
-                    .collect(Collectors.toList());
-
-                if (items.isEmpty()) {
-                    wordlistPanel.updateStatus("No items under " + prefix);
-                    return;
-                }
-
-                // Build JSON payloads with filtering
-                List<String> payloads = new ArrayList<>();
-                for (HttpRequestResponse rr : items) {
-                    URI uri = new URI(rr.request().url());
-                    String path = uri.getPath();
-
-                    if (path.matches(".*\\.(css|png|jpe?g|gif|svg|woff2?|ttf|otf|ico)$")) continue;
-                    if ("/".equals(path) || "/favicon.ico".equals(path)) continue;
-
-                    payloads.add(buildJsonPayload(rr));
-                }
-
-                if (payloads.isEmpty()) {
-                    wordlistPanel.updateStatus("No relevant items under " + prefix);
-                    return;
-                }
-
-                wordlistPanel.updateStatus("Sending JSON payloads to AI...");
-                String resultJson = conversationManager.startConversation(payloads);
-
-                // Parse JSON output and populate UI
-                populateCategories(resultJson);
-
-                wordlistPanel.updateContextSize(conversationManager.getContextSize());
-                wordlistPanel.updateStatus("Wordlist generated successfully!");
-
-            } catch (Exception ex) {
-                logging.logToError("Error generating wordlist: " + ex.getMessage());
-                wordlistPanel.updateStatus("Error: " + ex.getMessage());
-            }
-        }).start();
-    }
-
-    private String buildJsonPayload(HttpRequestResponse rr) throws Exception {
-    URI uri = new URI(rr.request().url());
-    
-    String safeUrl = uri.toString()
-        .replace("|", "%7C")
-        .replace(" ", "%20")
-        .replace("?", "%3F")
-        .replace("=", "%3D")
-        .replace("&", "%26");
-    URI safeUri = new URI(safeUrl);
-
-    // query params
-    Map<String,String> params = new LinkedHashMap<>();
-    String query = safeUri.getQuery();
-    if (query != null) {
-        for (String kv : query.split("&")) {
-            String[] p = kv.split("=",2);
-            params.put(p[0], p.length>1? p[1] : "");
-        }
-    }
-
-  
-    Map<String,Object> obj = new LinkedHashMap<>();
-    obj.put("method", rr.request().method());
-    obj.put("host", safeUri.getHost());
-    obj.put("path", safeUri.getPath());
-    obj.put("queryParams", params);
-
-  
-    String body = rr.request().bodyToString();
-    String contentType = rr.request()
-        .headers()
-        .stream()
-        .filter(h -> h.name().equalsIgnoreCase("Content-Type"))
-        .map(h -> h.value())
-        .findFirst().orElse("");
-
-    if (contentType.startsWith("application/x-www-form-urlencoded")) {
-        Map<String,String> form = new LinkedHashMap<>();
-        for (String kv : body.split("&")) {
-            String[] parts = kv.split("=",2);
-            form.put(parts[0], parts.length>1? parts[1]:"");
-        }
-        obj.put("bodyParams", form);
-
-    } else if (contentType.contains("application/json")) {
-   
+    new Thread(() -> {
         try {
-            Type t = new TypeToken<Map<String,Object>>(){}.getType();
-            Map<String,Object> jsonBody = GSON.fromJson(body, t);
-            obj.put("jsonBody", jsonBody);
-        } catch (Exception e) {
-   
+            List<HttpRequestResponse> sel = event.selectedRequestResponses();
+            if (sel.isEmpty()) {
+                logging.logToOutput("Select a node in the sitemap first.");
+                return;
+            }
+            String first = sel.get(0).request().url();
+            String prefix = first.substring(0, first.lastIndexOf('/') + 1);
+
+            List<HttpRequestResponse> items = api.siteMap()
+                .requestResponses()
+                .stream()
+                .filter(rr -> rr.request().url().startsWith(prefix))
+                .collect(Collectors.toList());
+
+            if (items.isEmpty()) {
+                wordlistPanel.updateStatus("No items under " + prefix);
+                return;
+            }
+
+            List<String> payloads = new ArrayList<>();
+            for (HttpRequestResponse rr : items) {
+                String payload = buildJsonPayload(rr);
+                if (payload != null) {
+                    payloads.add(payload);
+                }
+            }
+
+            if (payloads.isEmpty()) {
+                wordlistPanel.updateStatus("No relevant items under " + prefix);
+                return;
+            }
+
+            wordlistPanel.updateStatus("Sending JSON payloads to AI...");
+            String resultJson = conversationManager.startConversation(payloads);
+
+            if (resultJson.startsWith("Error")) {
+                wordlistPanel.updateStatus("Error: " + resultJson);
+                return;
+            }
+            
+            wordlistPanel.updateStatus("Everything is fine, generating wordlist...");
+            populateCategories(resultJson);
+
+            wordlistPanel.updateContextSize(conversationManager.getContextSize());
+            wordlistPanel.updateStatus("Wordlist generated successfully!");
+        }
+        catch (Exception ex) {
+            logging.logToError("Error generating wordlist: " + ex.getMessage());
+            wordlistPanel.updateStatus("Error: " + ex.getMessage());
+        }
+    }).start();
+}
+
+  private String buildJsonPayload(HttpRequestResponse rr) {
+    try {
+        String rawUrl = rr.request().url()
+            .replace("{", "%7B")
+            .replace("}", "%7D")
+            .replace(" ", "%20");
+        
+        URI uri = new URI(rawUrl);
+        
+        URI safeUri = new URI(
+            uri.getScheme(),
+            uri.getAuthority(),
+            uri.getRawPath(),
+            uri.getRawQuery(),
+            null
+        );
+
+        String safePath = safeUri.getRawPath();
+        if (safePath.matches(".*\\.(css|png|jpe?g|gif|svg|woff2?|ttf|otf|ico)$")) {
+            return null;
+        }
+        
+        String host  = safeUri.getHost();
+        String path  = safePath;
+        String query = safeUri.getRawQuery();
+        
+        Map<String,String> params = new LinkedHashMap<>();
+        if (query != null) {
+            for (String kv : query.split("&")) {
+                String[] p = kv.split("=", 2);
+                params.put(p[0], p.length>1 ? p[1] : "");
+            }
+        }
+        
+        Map<String,Object> obj = new LinkedHashMap<>();
+        obj.put("method", rr.request().method());
+        obj.put("host",   host);
+        obj.put("path",   path);
+        obj.put("queryParams", params);
+        
+        String body = rr.request().bodyToString();
+        String contentType = rr.request().headers().stream()
+            .filter(h -> h.name().equalsIgnoreCase("Content-Type"))
+            .map(h -> h.value())
+            .findFirst().orElse("");
+        
+        if (contentType.startsWith("application/x-www-form-urlencoded")) {
+            Map<String,String> form = new LinkedHashMap<>();
+            for (String kv : body.split("&")) {
+                String[] p = kv.split("=",2);
+                form.put(p[0], p.length>1 ? p[1] : "");
+            }
+            obj.put("bodyParams", form);
+        }
+        else if (contentType.contains("application/json")) {
+            try {
+                Type t = new TypeToken<Map<String,Object>>(){}.getType();
+                obj.put("jsonBody", GSON.fromJson(body, t));
+            } catch (Exception e) {
+                obj.put("body", body.length()>2000? body.substring(0,2000): body);
+            }
+        }
+        else if (!body.isBlank()) {
             obj.put("body", body.length()>2000? body.substring(0,2000): body);
         }
-
-    } else if (!body.isBlank()) {
-   
-        obj.put("body", body.length()>2000? body.substring(0,2000): body);
+        
+        String json = GSON.toJson(obj);
+        logging.logToOutput("Sending JSON payload: " + json);
+        return json;
+        
+    } catch (Exception e) {
+        logging.logToError("Skipping URL: " + rr.request().url() + " → " + e.getMessage());
+        return null;
     }
-
-    logging.logToOutput("Sending JSON payload: " + GSON.toJson(obj));
-    return GSON.toJson(obj);
 }
 
     private void populateCategories(String aiOutput) {
     
-    // Remove ```json and ``` from the output sometimes A.I returns it
-    String json = aiOutput.trim() .replaceAll("(?s)```json.*?```", "").replaceAll("(?s)```.*?```", "");
-    int start = s.indexOf('{');
-    int end   = s.lastIndexOf('}');
+    String text = aiOutput.trim();
+
+    int start = text.indexOf('{');
+    int end   = text.lastIndexOf('}');
+    logging.logToOutput("AI output: " + text);
     if (start < 0 || end <= start) {
         logging.logToError("No JSON object found in AI output");
         wordlistPanel.updateStatus("Error parsing AI output");
         return;
     }
-    String json = s.substring(start, end + 1);
+    String json = text.substring(start, end + 1);
 
-    
     if ((json.startsWith("\"") && json.endsWith("\"")) ||
         (json.startsWith("'") && json.endsWith("'"))) {
         json = json.substring(1, json.length() - 1)
@@ -243,9 +250,9 @@ public class Extension implements BurpExtension, ContextMenuItemsProvider {
         Type mapType = new TypeToken<Map<String, List<String>>>() {}.getType();
         Map<String, List<String>> map = GSON.fromJson(json, mapType);
 
-        List<String> files = splitCommaList(map.getOrDefault("fileVariations", List.of()));
-        List<String> paths = splitCommaList(map.getOrDefault("pathVariations", List.of()));
-        List<String> params= splitCommaList(map.getOrDefault("paramVariations",List.of()));
+        List<String> files  = splitCommaList(map.getOrDefault("fileVariations",  List.of()));
+        List<String> paths  = splitCommaList(map.getOrDefault("pathVariations",  List.of()));
+        List<String> params = splitCommaList(map.getOrDefault("paramVariations", List.of()));
 
         wordlistPanel.setCategoryItems("Files", files);
         wordlistPanel.setCategoryItems("Paths", paths);
@@ -257,7 +264,6 @@ public class Extension implements BurpExtension, ContextMenuItemsProvider {
         wordlistPanel.updateStatus("Error parsing AI output — check logs");
     }
 }
-
 
 private List<String> splitCommaList(List<String> raw) {
     List<String> out = new ArrayList<>();
