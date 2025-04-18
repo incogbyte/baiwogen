@@ -1,0 +1,32 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.incogbyte.baiwogen'
+version = '1.0.0'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly 'net.portswigger.burp.extensions:montoya-api:2025.2'
+    implementation 'com.google.code.gson:gson:2.8.9'    
+}
+
+jar {
+    manifest {
+        attributes(
+            'Implementation-Title': 'Burp Wordlist AI',
+            'Implementation-Version': version,
+            'Main-Class': 'com.incogbyte.baiwogen.Extension'
+        )
+    }
+
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
