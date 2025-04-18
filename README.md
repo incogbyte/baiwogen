@@ -69,7 +69,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-TODO
+🚨 TODO
   - Fixing AI Context menu
   - Improve Wordlists prompt
   - Fixing the menu to save files
